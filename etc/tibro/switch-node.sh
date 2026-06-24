@@ -1,7 +1,4 @@
 #!/bin/sh
-# /etc/tibro/switch-node.sh
-# Использование: switch-node.sh <provider> <node_index>
-
 XRAY_BIN="/usr/bin/xray"
 XRAY_PID="/var/run/tibro-xray.pid"
 CONFIG="/etc/tibro/config.json"
@@ -15,6 +12,7 @@ NODE_IDX="$2"
 log() { echo "[$(date '+%H:%M:%S')] $1" >> "$LOG"; }
 
 stop_xray() {
+    # Убиваем по PID файлу
     if [ -f "$XRAY_PID" ]; then
         OLD_PID=$(cat "$XRAY_PID")
         if kill -0 "$OLD_PID" 2>/dev/null; then
@@ -25,7 +23,11 @@ stop_xray() {
         fi
         rm -f "$XRAY_PID"
     fi
-    pkill -x xray 2>/dev/null
+    # Убиваем ВСЕ xray процессы через ps
+    for pid in $(ps | grep xray | grep -v grep | awk '{print $1}'); do
+        kill -9 "$pid" 2>/dev/null
+        log "Убит xray PID=$pid"
+    done
     sleep 1
 }
 

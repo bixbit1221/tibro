@@ -1,0 +1,21 @@
+{
+    "luci-app-tibro": {
+        "description": "Tibro VPN",
+        "read": {
+            "file": {
+                "/etc/tibro/tibro.conf": [ "read" ],
+                "/etc/tibro/nodes/*": [ "read" ],
+                "/var/log/tibro.log": [ "read" ],
+                "/var/run/tibro-xray.pid": [ "read" ]
+            },
+            "ubus": {
+                "session": [ "access", "login" ]
+            }
+        },
+        "write": {
+            "file": {
+                "/etc/tibro/tibro.conf": [ "write" ]
+            }
+        }
+    }
+}

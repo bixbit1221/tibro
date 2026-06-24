@@ -17,10 +17,11 @@ HOST=$(get_field "host")
 PORT=$(get_field "port")
 TRANSPORT=$(get_field "transport")
 SECURITY=$(get_field "security")
-SNI=$(get_field "sni")
+SNI=$(get_field "sni" | sed "s/\[\([^]]*\)\](\([^)]*\))/\1/g")
 PATH_V=$(get_field "path")
 WS_HOST=$(get_field "wsHost")
 SERVICE=$(get_field "serviceName")
+AUTHORITY=$(get_field "authority")
 
 [ -z "$SNI" ]       && SNI="$HOST"
 [ -z "$PATH_V" ]    && PATH_V="/"
@@ -43,7 +44,7 @@ build_stream() {
             printf '          "serverName": "%s",\n' "$SNI"
             printf '          "allowInsecure": false,\n'
             printf '          "fingerprint": "chrome",\n'
-            printf '          "alpn": ["h2"]\n'
+            printf '          "alpn": ["http/1.1"]\n'
             printf '        },\n'
             printf '        "wsSettings": {\n'
             printf '          "path": "%s",\n' "$PATH_V"
@@ -79,7 +80,8 @@ build_stream() {
             printf '          "alpn": ["h2"]\n'
             printf '        },\n'
             printf '        "grpcSettings": {\n'
-            printf '          "serviceName": "%s"\n' "$SERVICE"
+            printf '          "serviceName": "%s",\n' "$SERVICE"
+            printf '          "authority": "%s"\n' "$AUTHORITY"
             printf '        }\n'
             printf '      }\n'
             ;;

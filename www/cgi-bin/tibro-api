@@ -1,0 +1,42 @@
+#!/bin/sh
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+ACTION=$(echo "$QUERY_STRING" | grep -o 'action=[^&]*' | cut -d= -f2)
+PROVIDER=$(echo "$QUERY_STRING" | grep -o 'provider=[^&]*' | cut -d= -f2)
+NODE=$(echo "$QUERY_STRING" | grep -o 'node=[^&]*' | cut -d= -f2)
+
+if [ "$ACTION" = "switch" ] && [ -n "$PROVIDER" ] && [ -n "$NODE" ]; then
+    sh /etc/tibro/switch-node.sh "$PROVIDER" "$NODE" >> /var/log/tibro.log 2>&1 &
+    echo '{"ok":true}'
+    exit 0
+fi
+
+if [ "$ACTION" = "stop" ]; then
+    sh /etc/tibro/tproxy-stop.sh
+    kill $(ps | grep xray | grep -v grep | awk '{print $1}') 2>/dev/null
+    echo '{"ok":true}'
+    exit 0
+fi
+
+if [ "$ACTION" = "update" ]; then
+    sh /etc/tibro/update-sub.sh >> /var/log/tibro.log 2>&1 &
+    echo '{"ok":true}'
+    exit 0
+fi
+
+if [ "$ACTION" = "nodes" ] && [ -n "$PROVIDER" ]; then
+    cat /etc/tibro/nodes/${PROVIDER}.json 2>/dev/null || echo '[]'
+    exit 0
+fi
+
+# Статус по умолчанию
+PID=$(cat /var/run/tibro-xray.pid 2>/dev/null | tr -d '\n')
+RUNNING="false"
+[ -n "$PID" ] && kill -0 "$PID" 2>/dev/null && RUNNING="true"
+. /etc/tibro/tibro.conf
+LOG=$(tail -15 /var/log/tibro.log 2>/dev/null | sed 's/\\/\\\\/g;s/"/\\"/g;s/$/\\n/' | tr -d '\n')
+
+printf '{"running":%s,"pid":"%s","provider":"%s","node_idx":"%s","log":"%s"}\n' \
+    "$RUNNING" "$PID" "$ACTIVE_PROVIDER" "$ACTIVE_NODE" "$LOG"

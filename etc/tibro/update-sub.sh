@@ -87,6 +87,7 @@ parse_vless_to_json() {
         path_v=$(echo "$params"    | grep -o 'path=[^&]*' | cut -d= -f2 | sed 's|%2F|/|g')
         ws_host=$(echo "$params"   | grep -o 'host=[^&]*' | cut -d= -f2)
         service=$(echo "$params"   | grep -o 'serviceName=[^&]*' | cut -d= -f2)
+        authority=$(echo "$params" | grep -o 'authority=[^&]*' | cut -d= -f2)
 
         [ -z "$transport" ] && transport="tcp"
         [ -z "$security" ]  && security="tls"
@@ -107,7 +108,8 @@ parse_vless_to_json() {
   "sni": "${sni}",
   "path": "${path_v}",
   "wsHost": "${ws_host}",
-  "serviceName": "${service}"
+  "serviceName": "${service}",
+  "authority": "${authority}"
 }
 EOF
     done < "$infile"
@@ -157,3 +159,17 @@ fi
 
 rm -rf "$TMP"
 log "Обновление подписок завершено"
+
+# Очистка markdown артефактов из JSON
+fix_json() {
+    local file="$1"
+    # Убираем [text](url) -> text
+    sed -i 's|\[www\.google\.com\](https://www\.google\.com)|www.google.com|g' "$file"
+    sed -i 's|\[gemini\.google\.com\](https://gemini\.google\.com)|gemini.google.com|g' "$file"
+    # Универсальная очистка [text](url) -> text
+    sed -i 's/\[\([^]]*\)\]([^)]*)/\1/g' "$file"
+}
+
+fix_json "$NODES_DIR/happ.json"
+fix_json "$NODES_DIR/remnawave.json"
+log "JSON очищен от артефактов"
