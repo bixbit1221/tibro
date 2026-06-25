@@ -1,0 +1,11 @@
+# Tibro конфигурация
+ACTIVE_PROVIDER="remnawave"
+ACTIVE_NODE="0"
+
+SUB_REMNAWAVE="https://bit.media--cloud.stream/sub/4SF2Wb1JETFCkCCR"
+SUB_HAPP="https://xcloudix.shop/sub/98Bysv2B3cyKejH_"
+
+IP_REMNAWAVE="5.35.82.147"
+IP_HAPP="94.103.93.186"
+
+TPROXY_PORT="7895"

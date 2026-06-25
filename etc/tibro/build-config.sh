@@ -17,7 +17,7 @@ HOST=$(get_field "host")
 PORT=$(get_field "port")
 TRANSPORT=$(get_field "transport")
 SECURITY=$(get_field "security")
-SNI=$(get_field "sni" | sed "s/\[\([^]]*\)\](\([^)]*\))/\1/g")
+SNI=$(get_field "sni")
 PATH_V=$(get_field "path")
 WS_HOST=$(get_field "wsHost")
 SERVICE=$(get_field "serviceName")
@@ -30,7 +30,7 @@ AUTHORITY=$(get_field "authority")
 [ -z "$TRANSPORT" ] && TRANSPORT="tcp"
 
 if [ -z "$HOST" ] || [ -z "$PORT" ] || [ -z "$UUID" ]; then
-    echo "ОШИБКА: пустые поля HOST=$HOST PORT=$PORT UUID=$UUID" >&2
+    echo "ОШИБКА: пустые поля" >&2
     exit 1
 fi
 
@@ -100,20 +100,22 @@ printf '    "loglevel": "warning",\n'
 printf '    "access": "/var/log/tibro-xray.log",\n'
 printf '    "error": "/var/log/tibro-xray-error.log"\n'
 printf '  },\n'
+printf '  "fakedns": {"ipPool": "198.18.0.0/15", "poolSize": 65535},\n'
 printf '  "inbounds": [\n'
+printf '    {\n'
+printf '      "tag": "dns-in",\n'
+printf '      "port": 5353,\n'
+printf '      "listen": "::1",\n'
+printf '      "protocol": "dokodemo-door",\n'
+printf '      "settings": {"address": "8.8.8.8", "port": 53, "network": "udp", "followRedirect": false}\n'
+printf '    },\n'
 printf '    {\n'
 printf '      "tag": "tproxy-in",\n'
 printf '      "port": %s,\n' "$TPROXY_PORT"
 printf '      "protocol": "dokodemo-door",\n'
 printf '      "settings": {"network": "tcp,udp", "followRedirect": true},\n'
-printf '      "sniffing": {"enabled": true, "destOverride": ["http","tls"]},\n'
+printf '      "sniffing": {"enabled": true, "destOverride": ["fakedns", "http", "tls"], "metadataOnly": false},\n'
 printf '      "streamSettings": {"sockopt": {"tproxy": "tproxy"}}\n'
-printf '    },\n'
-printf '    {\n'
-printf '      "tag": "socks-in",\n'
-printf '      "port": 1080,\n'
-printf '      "protocol": "socks",\n'
-printf '      "settings": {"auth": "noauth"}\n'
 printf '    }\n'
 printf '  ],\n'
 printf '  "outbounds": [\n'
@@ -129,6 +131,7 @@ printf '  ],\n'
 printf '  "routing": {\n'
 printf '    "domainStrategy": "IPIfNonMatch",\n'
 printf '    "rules": [\n'
+printf '      {"type": "field", "ip": ["198.18.0.0/15"], "outboundTag": "proxy"},\n'
 printf '      {"type": "field", "ip": ["geoip:private"], "outboundTag": "direct"},\n'
 printf '      {"type": "field", "network": "tcp,udp", "outboundTag": "proxy"}\n'
 printf '    ]\n'
