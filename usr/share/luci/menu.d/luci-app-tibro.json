@@ -1,0 +1,47 @@
+{
+    "admin/services/tibro": {
+        "title": "Tibro VPN",
+        "order": 60,
+        "action": {
+            "type": "view",
+            "path": "tibro/overview"
+        },
+        "depends": {
+            "acl": [
+                "luci-app-tibro"
+            ]
+        }
+    },
+    "admin/services/tibro/overview": {
+        "title": "Статус",
+        "order": 10,
+        "action": {
+            "type": "view",
+            "path": "tibro/overview"
+        }
+    },
+    "admin/services/tibro/remnawave": {
+        "title": "Remnawave",
+        "order": 20,
+        "action": {
+            "type": "view",
+            "path": "tibro/remnawave"
+        }
+    },
+    "admin/services/tibro/happ": {
+        "title": "Happ",
+        "order": 30,
+        "action": {
+            "type": "view",
+            "path": "tibro/happ"
+        }
+    },
+    "admin/services/tibro/provider3": {
+        "title": "Provider 3",
+        "order": 40,
+        "action": {
+            "type": "view",
+            "path": "tibro/provider3"
+        }
+    }
+}

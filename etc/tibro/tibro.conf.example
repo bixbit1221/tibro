@@ -1,0 +1,19 @@
+# Tibro конфигурация
+ACTIVE_PROVIDER="remnawave"
+ACTIVE_NODE="2"
+
+SUB_REMNAWAVE="https://example.com/sub/YOUR_SUBSCRIPTION_ID"
+SUB_HAPP="https://example.com/sub/YOUR_SUBSCRIPTION_ID"
+
+IP_REMNAWAVE="1.2.3.4"
+IP_HAPP="1.2.3.4"
+
+TPROXY_PORT="7895"
+
+TIBRO_USER="admin"
+TIBRO_PASS="changeme"
+LABEL_REMNAWAVE='ProviderName'
+LABEL_HAPP='ProviderName'
+SUB_PROVIDER3="https://example.com/sub/YOUR_SUBSCRIPTION_ID"
+IP_PROVIDER3="1.2.3.4"
+LABEL_PROVIDER3='ProviderName'

@@ -1,0 +1,138 @@
+#!/bin/sh
+echo "Content-Type: text/html; charset=utf-8"
+echo ""
+
+ACTION=$(echo "$QUERY_STRING" | grep -o 'action=[^&]*' | cut -d= -f2)
+PROVIDER=$(echo "$QUERY_STRING" | grep -o 'provider=[^&]*' | cut -d= -f2)
+NODE=$(echo "$QUERY_STRING" | grep -o 'node=[^&]*' | cut -d= -f2)
+
+# Выполняем действие
+if [ "$ACTION" = "switch" ] && [ -n "$PROVIDER" ] && [ -n "$NODE" ]; then
+    sh /etc/tibro/switch-node.sh "$PROVIDER" "$NODE" >> /var/log/tibro.log 2>&1 &
+fi
+if [ "$ACTION" = "stop" ]; then
+    sh /etc/tibro/tproxy-stop.sh >> /var/log/tibro.log 2>&1
+    kill $(ps | grep xray | grep -v grep | awk '{print $1}') 2>/dev/null
+fi
+if [ "$ACTION" = "update" ]; then
+    sh /etc/tibro/update-sub.sh >> /var/log/tibro.log 2>&1 &
+fi
+
+# Статус
+PID=$(cat /var/run/tibro-xray.pid 2>/dev/null)
+RUNNING="Остановлен"
+COLOR="#c0392b"
+if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+    RUNNING="Работает (PID $PID)"
+    COLOR="#27ae60"
+fi
+
+. /etc/tibro/tibro.conf
+
+# Ноды Remnawave
+RW_NODES=$(grep '"name"' /etc/tibro/nodes/remnawave.json 2>/dev/null | \
+    sed 's/.*"name":[[:space:]]*"\(.*\)"/\1/' | \
+    awk '{print NR-1"\t"$0}')
+
+# Ноды Happ
+HAPP_NODES=$(grep '"name"' /etc/tibro/nodes/happ.json 2>/dev/null | \
+    sed 's/.*"name":[[:space:]]*"\(.*\)"/\1/' | \
+    awk '{print NR-1"\t"$0}')
+
+# Лог
+LOG=$(tail -15 /var/log/tibro.log 2>/dev/null)
+
+cat << HTML
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tibro VPN</title>
+<style>
+body{background:#0d0d0d;color:#eee;font-family:sans-serif;margin:0;padding:10px}
+h1{color:#3498db;margin:10px 0}
+.card{background:#1a1a2e;border-radius:8px;padding:12px;margin:10px 0}
+.status{font-size:18px;font-weight:bold;color:${COLOR}}
+button{padding:8px 16px;border:none;border-radius:4px;cursor:pointer;margin:4px;font-size:13px}
+.btn-g{background:#27ae60;color:#fff}
+.btn-r{background:#c0392b;color:#fff}
+.btn-b{background:#2980b9;color:#fff}
+.btn-n{background:#34495e;color:#fff;font-size:11px;padding:4px 10px}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th{background:#2c3e50;padding:6px;text-align:left;font-size:12px}
+td{padding:5px 6px;font-size:12px;border-bottom:1px solid #222}
+tr:nth-child(even) td{background:#111}
+.log{background:#000;border-radius:4px;padding:8px;font-family:monospace;
+     font-size:11px;color:#0f0;white-space:pre-wrap;max-height:180px;overflow-y:auto}
+.active-row td{background:#0d2b0d!important;color:#7fff7f!important}
+h3{color:#3498db;margin:8px 0 4px}
+</style>
+</head>
+<body>
+<h1>&#128268; Tibro VPN</h1>
+
+<div class="card">
+  <div class="status">&#9679; ${RUNNING}</div>
+  <div style="color:#aaa;font-size:13px;margin-top:4px">
+    Провайдер: <b>${ACTIVE_PROVIDER}</b> | Нода: <b>${ACTIVE_NODE}</b>
+  </div>
+  <div style="margin-top:10px">
+    <button class="btn-r" onclick="location='?action=stop'">&#9632; Стоп</button>
+    <button class="btn-b" onclick="location='?action=update'">&#8635; Подписки</button>
+  </div>
+</div>
+
+<div class="card">
+  <h3>Remnawave</h3>
+  <table>
+  <tr><th>#</th><th>Название</th><th>Действие</th></tr>
+HTML
+
+echo "$RW_NODES" | while IFS=$'\t' read idx name; do
+    [ -z "$idx" ] && continue
+    ACTIVE_CLASS=""
+    [ "$ACTIVE_PROVIDER" = "remnawave" ] && [ "$ACTIVE_NODE" = "$idx" ] && ACTIVE_CLASS=' class="active-row"'
+    if [ "$ACTIVE_PROVIDER" = "remnawave" ] && [ "$ACTIVE_NODE" = "$idx" ]; then
+        BTN="<span style='color:#7fff7f'>&#9679; Активна</span>"
+    else
+        BTN="<button class='btn-n' onclick=\"location='?action=switch&provider=remnawave&node=${idx}'\">&#9654; Подключить</button>"
+    fi
+    echo "<tr${ACTIVE_CLASS}><td>${idx}</td><td>${name}</td><td>${BTN}</td></tr>"
+done
+
+cat << HTML
+  </table>
+</div>
+
+<div class="card">
+  <h3>Happ</h3>
+  <table>
+  <tr><th>#</th><th>Название</th><th>Действие</th></tr>
+HTML
+
+echo "$HAPP_NODES" | while IFS=$'\t' read idx name; do
+    [ -z "$idx" ] && continue
+    ACTIVE_CLASS=""
+    [ "$ACTIVE_PROVIDER" = "happ" ] && [ "$ACTIVE_NODE" = "$idx" ] && ACTIVE_CLASS=' class="active-row"'
+    if [ "$ACTIVE_PROVIDER" = "happ" ] && [ "$ACTIVE_NODE" = "$idx" ]; then
+        BTN="<span style='color:#7fff7f'>&#9679; Активна</span>"
+    else
+        BTN="<button class='btn-n' onclick=\"location='?action=switch&provider=happ&node=${idx}'\">&#9654; Подключить</button>"
+    fi
+    echo "<tr${ACTIVE_CLASS}><td>${idx}</td><td>${name}</td><td>${BTN}</td></tr>"
+done
+
+cat << HTML
+  </table>
+</div>
+
+<div class="card">
+  <h3>Лог</h3>
+  <div class="log">${LOG}</div>
+</div>
+
+<script>setTimeout(function(){location.reload()},15000)</script>
+</body>
+</html>
+HTML
