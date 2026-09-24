@@ -1,0 +1,5 @@
+#!/bin/sh
+if [ "$ACTION" = "ifup" ] && [ "$INTERFACE" = "wan" ]; then
+    sleep 10
+    ps | grep -v grep | grep -q gazza-watchdog || sh /usr/sbin/gazza-watchdog.sh &
+fi

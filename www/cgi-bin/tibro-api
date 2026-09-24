@@ -1,0 +1,144 @@
+#!/bin/sh
+. /etc/tibro/tibro.conf 2>/dev/null
+
+urldecode() {
+    s=$(echo "$1" | sed 's/+/ /g; s/%/\\x/g')
+    printf '%b' "$s"
+}
+
+echo "Content-Type: application/json"
+echo "Access-Control-Allow-Origin: *"
+echo ""
+
+ACTION=$(echo "$QUERY_STRING" | grep -o 'action=[^&]*' | cut -d= -f2)
+PROVIDER=$(echo "$QUERY_STRING" | grep -o 'provider=[^&]*' | cut -d= -f2)
+NODE=$(echo "$QUERY_STRING" | grep -o 'node=[^&]*' | cut -d= -f2)
+HOST=$(echo "$QUERY_STRING" | grep -o 'host=[^&]*' | cut -d= -f2)
+PORT=$(echo "$QUERY_STRING" | grep -o 'port=[^&]*' | cut -d= -f2)
+URLPARAM=$(echo "$QUERY_STRING" | grep -o 'url=[^&]*' | cut -d= -f2-)
+LABELPARAM=$(echo "$QUERY_STRING" | grep -o 'label=[^&]*' | cut -d= -f2-)
+WAN_IP=$(ip addr show wan 2>/dev/null | grep 'inet ' | awk '{print $2}' | cut -d/ -f1)
+
+case "$ACTION" in
+    switch)
+        if [ -n "$PROVIDER" ] && [ -n "$NODE" ]; then
+            sh /etc/tibro/switch-node.sh "$PROVIDER" "$NODE" >> /var/log/tibro.log 2>&1 &
+            echo '{"ok":true}'
+        else
+            echo '{"ok":false,"error":"missing params"}'
+        fi
+        ;;
+    stop)
+        /etc/init.d/tibro-xray stop
+        sh /etc/tibro/tproxy-stop.sh
+        echo '{"ok":true}'
+        ;;
+    update)
+        sh /etc/tibro/update-sub.sh >> /var/log/tibro.log 2>&1 &
+        echo '{"ok":true}'
+        ;;
+    setsub)
+        if [ -n "$PROVIDER" ] && [ -n "$URLPARAM" ]; then
+            DECODED_URL=$(urldecode "$URLPARAM")
+            ESCAPED_URL=$(printf '%s' "$DECODED_URL" | sed 's/[&|]/\\&/g')
+            case "$PROVIDER" in
+                remnawave)
+                    sed -i "s|^SUB_REMNAWAVE=.*|SUB_REMNAWAVE=\"$ESCAPED_URL\"|" /etc/tibro/tibro.conf
+                    ;;
+                happ)
+                    sed -i "s|^SUB_HAPP=.*|SUB_HAPP=\"$ESCAPED_URL\"|" /etc/tibro/tibro.conf
+                    ;;
+                provider3)
+                    sed -i "s|^SUB_PROVIDER3=.*|SUB_PROVIDER3=\"$ESCAPED_URL\"|" /etc/tibro/tibro.conf
+                    ;;
+                *)
+                    echo '{"ok":false,"error":"invalid provider"}'
+                    exit 0
+                    ;;
+            esac
+            sh /etc/tibro/update-sub.sh >> /var/log/tibro.log 2>&1 &
+            echo '{"ok":true}'
+        else
+            echo '{"ok":false,"error":"missing params"}'
+        fi
+        ;;
+    setlabel)
+        if [ -n "$PROVIDER" ] && [ -n "$LABELPARAM" ]; then
+            DECODED_LABEL=$(urldecode "$LABELPARAM")
+            ESCAPED_LABEL=$(printf '%s' "$DECODED_LABEL" | sed 's/[&|]/\\&/g')
+            case "$PROVIDER" in
+                remnawave)
+                    sed -i "s|^LABEL_REMNAWAVE=.*|LABEL_REMNAWAVE='$ESCAPED_LABEL'|" /etc/tibro/tibro.conf
+                    ;;
+                happ)
+                    sed -i "s|^LABEL_HAPP=.*|LABEL_HAPP='$ESCAPED_LABEL'|" /etc/tibro/tibro.conf
+                    ;;
+                provider3)
+                    sed -i "s|^LABEL_PROVIDER3=.*|LABEL_PROVIDER3='$ESCAPED_LABEL'|" /etc/tibro/tibro.conf
+                    ;;
+                *)
+                    echo '{"ok":false,"error":"invalid provider"}'
+                    exit 0
+                    ;;
+            esac
+            echo '{"ok":true}'
+        else
+            echo '{"ok":false,"error":"missing params"}'
+        fi
+        ;;
+    nodes)
+        if [ -n "$PROVIDER" ]; then
+            cat /etc/tibro/nodes/${PROVIDER}.json 2>/dev/null || echo '[]'
+        else
+            echo '[]'
+        fi
+        ;;
+    ping)
+        if [ -n "$HOST" ] && [ -n "$PORT" ]; then
+            PY_IP=$(python3 -c "import socket;print(socket.gethostbyname('$HOST'))" 2>/dev/null)
+            if [ -n "$PY_IP" ]; then
+                TIME_S=$(curl -s --max-time 5 \
+                    --interface "${WAN_IP}" \
+                    --resolve "${HOST}:${PORT}:${PY_IP}" \
+                    -w "%{time_connect}" \
+                    "https://${HOST}:${PORT}" \
+                    -o /dev/null 2>/dev/null)
+            else
+                TIME_S=$(curl -s --max-time 5 \
+                    --interface "${WAN_IP}" \
+                    -w "%{time_connect}" \
+                    "https://${HOST}:${PORT}" \
+                    -o /dev/null 2>/dev/null)
+            fi
+            MS=$(echo "$TIME_S" | awk '{printf "%d", $1 * 1000}')
+            if [ -n "$MS" ] && [ "$MS" -gt 0 ] 2>/dev/null; then
+                echo "{\"ms\":${MS},\"ok\":true}"
+            else
+                ICMP_TARGET="$HOST"
+                [ -n "$PY_IP" ] && ICMP_TARGET="$PY_IP"
+                ICMP_MS=$(ping -c1 -W3 "$ICMP_TARGET" 2>/dev/null | grep -o "time=[0-9.]*" | cut -d= -f2 | cut -d. -f1)
+                if [ -n "$ICMP_MS" ]; then
+                    echo "{\"ms\":${ICMP_MS},\"ok\":true,\"note\":\"icmp\"}"
+                else
+                    echo '{"ms":9999,"ok":false}'
+                fi
+            fi
+        else
+            echo '{"ms":9999,"ok":false}'
+        fi
+        ;;
+    *)
+        PID=$(pgrep -f "/usr/bin/xray -c /etc/tibro/config.json" | head -1)
+        RUNNING="false"
+        [ -n "$PID" ] && RUNNING="true"
+        LOG=$(tail -15 /var/log/tibro.log 2>/dev/null | sed 's/\\/\\\\/g;s/"/\\"/g' | awk '{printf "%s\\n",$0}')
+        SUB_RW_ESC=$(printf '%s' "$SUB_REMNAWAVE" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        SUB_HAPP_ESC=$(printf '%s' "$SUB_HAPP" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        LABEL_RW_ESC=$(printf '%s' "$LABEL_REMNAWAVE" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        LABEL_HAPP_ESC=$(printf '%s' "$LABEL_HAPP" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        SUB_P3_ESC=$(printf '%s' "$SUB_PROVIDER3" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        LABEL_P3_ESC=$(printf '%s' "$LABEL_PROVIDER3" | sed 's/\\/\\\\/g;s/"/\\"/g')
+        printf '{"running":%s,"pid":"%s","provider":"%s","node_idx":"%s","log":"%s","sub_remnawave":"%s","sub_happ":"%s","sub_provider3":"%s","label_remnawave":"%s","label_happ":"%s","label_provider3":"%s"}\n' \
+            "$RUNNING" "$PID" "$ACTIVE_PROVIDER" "$ACTIVE_NODE" "$LOG" "$SUB_RW_ESC" "$SUB_HAPP_ESC" "$SUB_P3_ESC" "$LABEL_RW_ESC" "$LABEL_HAPP_ESC" "$LABEL_P3_ESC"
+        ;;
+esac
