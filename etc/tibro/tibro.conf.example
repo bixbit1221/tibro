@@ -1,6 +1,6 @@
 # Tibro конфигурация
 ACTIVE_PROVIDER="remnawave"
-ACTIVE_NODE="0"
+ACTIVE_NODE="12"
 
 SUB_REMNAWAVE="https://example.com/sub/YOUR_SUBSCRIPTION_ID"
 SUB_HAPP="https://example.com/sub/YOUR_SUBSCRIPTION_ID"

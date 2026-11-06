@@ -95,7 +95,11 @@ case "$ACTION" in
         ;;
     ping)
         if [ -n "$HOST" ] && [ -n "$PORT" ]; then
-            PY_IP=$(python3 -c "import socket;print(socket.gethostbyname('$HOST'))" 2>/dev/null)
+            case "$HOST" in
+                *[!0-9.]*) PY_IP=$(curl -s --max-time 6 --resolve dns.google:443:8.8.8.8 "https://dns.google/resolve?name=${HOST}&type=A" | grep -o '"type":1,"TTL":[0-9]*,"data":"[0-9.]*"' | head -1 | grep -o '[0-9]*\.[0-9]*\.[0-9]*\.[0-9]*') ;;
+                *) PY_IP="$HOST" ;;
+            esac
+            case "$PY_IP" in 127.*|0.*) echo '{"ms":9999,"ok":false,"note":"loopback"}'; exit 0 ;; esac
             if [ -n "$PY_IP" ]; then
                 TIME_S=$(curl -s --max-time 5 \
                     --interface "${WAN_IP}" \
@@ -111,7 +115,7 @@ case "$ACTION" in
                     -o /dev/null 2>/dev/null)
             fi
             MS=$(echo "$TIME_S" | awk '{printf "%d", $1 * 1000}')
-            if [ -n "$MS" ] && [ "$MS" -gt 0 ] 2>/dev/null; then
+            if [ -n "$MS" ] && [ "$MS" -gt 3 ] 2>/dev/null; then
                 echo "{\"ms\":${MS},\"ok\":true}"
             else
                 ICMP_TARGET="$HOST"

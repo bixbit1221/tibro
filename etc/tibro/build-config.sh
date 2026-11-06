@@ -110,7 +110,7 @@ build_stream() {
 printf '{\n'
 printf '  "log": {\n'
 printf '    "loglevel": "warning",\n'
-printf '    "access": "/var/log/tibro-xray.log",\n'
+printf '    "access": "none",\n'
 printf '    "error": "/var/log/tibro-xray-error.log"\n'
 printf '  },\n'
 printf '  "fakedns": {"ipPool": "198.18.0.0/15", "poolSize": 65535},\n'
