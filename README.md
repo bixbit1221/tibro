@@ -71,3 +71,21 @@ On OpenWrt `/var/log` lives in RAM. The xray access log is therefore disabled (`
 - Node ping resolves hostnames with DNS-over-HTTPS (dns.google, pinned to 8.8.8.8), so it does not depend on the active tunnel and is not fooled by tampered plain DNS. Answers pointing to loopback count as unreachable. If the TCP connect fails, ICMP is used as a fallback.
 - Supported node types: VLESS (tcp, ws, grpc, xhttp) and Hysteria2 (shown with the `hysteria` badge). Hysteria2 runs over UDP, so a TCP/ICMP ping says little about whether it works; the watchdog's DNS-through-tunnel check is the reliable signal.
 
+
+## Failover across subscriptions
+
+The watchdog first looks for a working node inside the active provider. If that provider has no working node left (every candidate fails the DNS-through-tunnel check), it tries the nodes of the other configured subscriptions in the order Remnawave, Happ, Provider 3 and picks the closest one that passes. A provider counts as configured when its `SUB_*` URL is set in `tibro.conf` and its node file is not empty.
+
+Nodes that fail are excluded for 30 minutes. The watchdog does not switch back to the first subscription while the second one works; it only moves again when the current provider has no working node.
+
+Dry run (prints the candidates per provider, switches nothing):
+
+    sh /etc/tibro/watchdog.sh --dry
+
+Forced run (really switches, internet may drop for a minute or two):
+
+    sh /etc/tibro/watchdog.sh --force
+
+## xray without geoip.dat
+
+Stock OpenWrt packages of xray ship without `geoip.dat`. A routing rule such as `geoip:private` then makes xray fail at start (`failed to open file: geoip.dat`) and procd gives up after a few crashes, while the TPROXY rules stay loaded and clients lose internet. For that reason `build-config.sh` lists the private subnets explicitly (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 127.0.0.0/8, 169.254.0.0/16, ::1/128, fc00::/7, fe80::/10) instead of using `geoip:private`. If you add your own `geoip:` or `geosite:` rules, install the data files first.
