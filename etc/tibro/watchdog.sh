@@ -1,5 +1,6 @@
 #!/bin/sh
 # Tibro watchdog: нет данных через туннель -> ближайшая рабочая нода
+# (сначала у активного провайдера, потом у других подписок)
 CONF="/etc/tibro/tibro.conf"
 NODES_DIR="/etc/tibro/nodes"
 LOG="/var/log/tibro.log"
@@ -7,8 +8,10 @@ STATE="/tmp/tibro-wd"
 MAX_FAILS=3
 BAN_SEC=1800
 MAX_TRY=5
+MODE="$1"
 
 log() { echo "[$(date '+%H:%M:%S')] [watchdog] $1" >> "$LOG"; }
+say() { if [ "$MODE" = "--dry" ]; then echo "$1"; else log "$1"; fi; }
 mkdir -p "$STATE"
 
 exec 9>"$STATE/run.lock"
@@ -16,12 +19,14 @@ flock -n 9 || exit 0
 ( flock -n 8 ) 8>/var/run/tibro-switch.lock || exit 0
 
 . "$CONF"
-nft list table inet tibro >/dev/null 2>&1 || exit 0
 
-if ! pgrep -f "/usr/bin/xray -c" >/dev/null 2>&1; then
-    log "xray не запущен при активных правилах TPROXY - перезапуск"
-    /etc/init.d/tibro-xray restart >/dev/null 2>&1
-    exit 0
+if [ "$MODE" != "--dry" ]; then
+    nft list table inet tibro >/dev/null 2>&1 || exit 0
+    if ! pgrep -f "/usr/bin/xray -c" >/dev/null 2>&1; then
+        log "xray не запущен при активных правилах TPROXY - перезапуск"
+        /etc/init.d/tibro-xray restart >/dev/null 2>&1
+        exit 0
+    fi
 fi
 
 tunnel_ok() {
@@ -42,13 +47,21 @@ list_nodes() {
     ' "$1"
 }
 
-failover() {
-    prov="$ACTIVE_PROVIDER"; cur="$ACTIVE_NODE"
-    ban "$prov" "$cur"
-    f="$NODES_DIR/$prov.json"
-    [ -f "$f" ] || { log "нет файла нод $f"; return 1; }
+# провайдеры, у которых задана подписка и есть файл с нодами
+providers_list() {
+    for p in remnawave happ provider3; do
+        up=$(echo "$p" | tr 'a-z' 'A-Z')
+        eval "s=\$SUB_$up"
+        if [ -n "$s" ] && [ -s "$NODES_DIR/$p.json" ]; then echo "$p"; fi
+    done
+}
 
+# $1 = провайдер, $2 = номер ноды, которую пропустить (текущая), может быть пустым
+try_provider() {
+    prov="$1"; skip="$2"
+    f="$NODES_DIR/$prov.json"
     list_nodes "$f" > "$STATE/all"
+    [ -s "$STATE/all" ] || { say "провайдер $prov: нод нет"; return 1; }
     rm -f "$STATE"/lat.*
     awk '{print $2, $3}' "$STATE/all" | sort -u > "$STATE/uniq"
     n=0
@@ -64,13 +77,19 @@ failover() {
 
     : > "$STATE/cand"
     while read idx host port proto; do
-        [ "$idx" = "$cur" ] && continue
+        [ -n "$skip" ] && [ "$idx" = "$skip" ] && continue
         is_banned "$prov" "$idx" && continue
         lf="$STATE/lat.${host}_${port}"
         [ -f "$lf" ] || continue
         echo "$(cat "$lf") $idx" >> "$STATE/cand"
     done < "$STATE/all"
     sort -n "$STATE/cand" | head -n "$MAX_TRY" > "$STATE/try"
+
+    if [ "$MODE" = "--dry" ]; then
+        echo "провайдер $prov: нод $(wc -l < "$STATE/all"), кандидатов $(wc -l < "$STATE/try")"
+        while read ms idx; do echo "    нода $idx, ${ms} мс"; done < "$STATE/try"
+        return 1
+    fi
 
     while read ms idx; do
         log "пробую ноду $prov/$idx (${ms} мс)"
@@ -84,11 +103,28 @@ failover() {
         log "нода $prov/$idx тоже не передаёт данные - исключаю на $((BAN_SEC/60)) мин"
         ban "$prov" "$idx"
     done < "$STATE/try"
-    log "не нашёл рабочую ноду среди ближайших"
     return 1
 }
 
-if [ "$1" = "--force" ]; then
+failover() {
+    cur_prov="$ACTIVE_PROVIDER"; cur="$ACTIVE_NODE"
+    [ "$MODE" = "--dry" ] || ban "$cur_prov" "$cur"
+    try_provider "$cur_prov" "$cur" && return 0
+    for p in $(providers_list); do
+        [ "$p" = "$cur_prov" ] && continue
+        say "у провайдера $cur_prov рабочей ноды нет - пробую подписку $p"
+        try_provider "$p" "" && return 0
+    done
+    say "не нашёл рабочую ноду ни у одного провайдера"
+    return 1
+}
+
+if [ "$MODE" = "--dry" ]; then
+    echo "активна: $ACTIVE_PROVIDER/$ACTIVE_NODE; порядок поиска: $ACTIVE_PROVIDER, затем $(providers_list | grep -v "^$ACTIVE_PROVIDER\$" | tr '\n' ' ')"
+    failover
+    exit 0
+fi
+if [ "$MODE" = "--force" ]; then
     log "ручной тест: принудительный поиск ближайшей ноды"
     failover
     exit 0
